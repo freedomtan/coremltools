@@ -156,6 +156,7 @@ def ssa_convert(ssa,
             if not os.path.isfile(classes_in):
                 raise ValueError("Path to class labels (%s) does not exist." % \
                     classes_in)
+            if os.path.isfile(classes_in):
                 with open(classes_in, 'r') as f:
                     classes = f.read()
                 classes = classes.splitlines()
