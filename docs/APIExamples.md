@@ -1,7 +1,8 @@
+docs/APIExamples.md
 # API Code snippets
 
 ## Converting between MLModel and Spec
- 
+
 ```python
 import coremltools
 
@@ -33,25 +34,6 @@ mlmodel = coremltools.models.MLModel(spec)
 spec = coremltools.models.utils.load_spec('path/to/the/model.mlmodel')
 ```
 
-## Visualizing Neural Network Core ML models
-
-```python
-import coremltools
-
-nn_mlmodel = coremltools.models.MLModel('path/to/the/model.mlmodel')
-nn_mlmodel.visualize_spec()
-
-# To print a succinct description of the neural network
-spec = nn_mlmodel.get_spec()
-from coremltools.models.neural_network.printer import print_network_spec
-
-print_network_spec(spec, style='coding')
-# or
-print_network_spec(spec)
-```
-
-Another useful tool for visualizing CoreML models and models from other frameworks: [Netron](https://github.com/lutzroeder/netron)
-
 ## Printing the pre-processing parameters 
 
 This is useful for image based neural network models
@@ -77,7 +59,7 @@ print(nn.preprocessing)
 ## Changing MLMultiArray input/output datatypes
 
 [Here](https://github.com/apple/coremltools/blob/d07421460f9f0ad1a2e9cf8b5248670358a24a1a/mlmodel/format/FeatureTypes.proto#L106 ) is the list of supported datatypes.
-For instance, change the datatype from 'double' to 'float32': 
+For instance, change the datatype from 'double' to 'float32':
 
 ```python
 import coremltools
@@ -115,7 +97,7 @@ import PIL.Image
 
 model = coremltools.models.MLModel('path/to/the/saved/model.mlmodel')
 
-Height = 20  # use the correct input image height 
+Height = 20  # use the correct input image height
 Width = 60  # use the correct input image width
 
 
@@ -129,7 +111,7 @@ def load_image(path, resize_to=None):
     return img_np, img
 
 
-# load the image and resize using PIL utilities 
+# load the image and resize using PIL utilities
 _, img = load_image('/path/to/image.jpg', resize_to=(Width, Height))
 out_dict = model.predict({'image': img})
 
@@ -143,8 +125,12 @@ out_dict = model.predict({'image': pil_img})
 
 ## Building an mlmodel from scratch using Neural Network Builder
 
-We can use the neural network builder class to construct a CoreML model. Lets look at an example of 
-making a tiny 2 layer model with a convolution layer (with random weights) and an activation. 
+The neural network [builder class](https://github.com/apple/coremltools/blob/master/coremltools/models/neural_network/builder.py) can be used to programmatically construct a CoreML model. 
+Lets look at an example of 
+making a tiny 2 layer model with a convolution layer (with random weights) and an activation.
+
+To find the list of all the neural network layer types supported see [this](https://github.com/aseemw/coremltools/blob/f95f9b230f6a1bd8b0d9ee298b78d7786e3e7cfd/mlmodel/format/NeuralNetwork.proto#L472) 
+portion of the NeuralNetwork.proto 
 
 ```python
 import coremltools
@@ -152,10 +138,11 @@ import coremltools.models.datatypes as datatypes
 from coremltools.models import neural_network as neural_network
 import numpy as np
 
-input_features = [('data', datatypes.Array(*(3, 10, 10)))]
+input_features = [('data', datatypes.Array(*(1, 3, 10, 10)))]
 output_features = [('output', None)]
 
-builder = neural_network.NeuralNetworkBuilder(input_features, output_features)
+builder = neural_network.NeuralNetworkBuilder(input_features, output_features, 
+                                              disable_rank5_shape_mapping=True)
 
 builder.add_convolution(name='conv',
                         kernel_channels=3,
@@ -182,33 +169,11 @@ spec = builder.spec
 model = coremltools.models.MLModel(spec)
 model.save('conv_prelu.mlmodel')
 
-output_dict = model.predict({'data': np.ones((3, 10, 10))}, useCPUOnly=False)
+output_dict = model.predict({'data': np.ones((1, 3, 10, 10))}, useCPUOnly=False)
 print(output_dict['output'].shape)
-print(output_dict['output'].flatten()[:3])
+#print(output_dict['output'])
 ```
 
-## Print out layer attributes for debugging
-
-Sometimes we want to print out weights of a particular layer for debugging purposes.
-Following is an example showing how we can utilize the `protobuf` APIs to access any
-attributes include weight parameters. This code snippet uses the model we created in
-the previous example.
-
-```python
-import coremltools
-import numpy as np
-
-model = coremltools.models.MLModel('conv_prelu.mlmodel')
-
-spec = model.get_spec()
-print(spec)
-
-layer = spec.neuralNetwork.layers[0]
-weight_params = layer.convolution.weights
-
-print('Weights of {} layer: {}.'.format(layer.WhichOneof('layer'), layer.name))
-print(np.reshape(np.asarray(weight_params.floatValue), (1, 1, 3, 3)))
-```
 
 ## Quantizing a neural network mlmodel
 

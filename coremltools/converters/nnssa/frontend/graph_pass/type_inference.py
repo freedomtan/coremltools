@@ -19,13 +19,13 @@ short_var_name_cache = {}
 
 def get_conv_outdim(in_dim, ks, stride, dl, padding_type):
     try:
-        if padding_type == 'VALID':
+        if padding_type.lower() == 'valid':
             ks_dilated = (ks - 1) * dl + 1
-            return (in_dim - ks_dilated) / stride + 1
-        elif padding_type == 'SAME':
+            return math.floor((in_dim - ks_dilated) / stride) + 1
+        elif padding_type.lower() == 'same':
             return math.ceil(in_dim * 1.0 / stride)
         else:
-            raise ValueError('[TypeInference] Unrecognized padding type.')
+            raise ValueError('[TypeInference] Unrecognized padding type \'{}\'.'.format(padding_type))
     except Exception as e:
         raise ValueError('[TypeInference] Error fetching padding values: {}'.format(e))
 
@@ -346,6 +346,9 @@ class TypeInferenceVisitor(object):
         return ret
 
     def visit_Add(self, node):
+        return self.visit_broadcast_op(node)
+
+    def visit_AddV2(self, node):
         return self.visit_broadcast_op(node)
 
     def visit_Maximum(self, node):
@@ -1814,7 +1817,7 @@ class TypeInferenceVisitor(object):
         self.whole_ssa.global_resource[node.name] = node
         node.attr['tensorarray_source'] = node.name
 
-        return builtins.list(node.attr['element_shape'])
+        return builtins.list(node.attr['element_shape']) if node.attr['element_shape'] else None
 
     def visit_TensorArrayGatherV3(self, node):
         # input is resource, indices, flow
@@ -1837,9 +1840,10 @@ class TypeInferenceVisitor(object):
         tanode = self.find_tensor_array_source_node(node)
 
         ta_type = self.visit(node.inputs[1])
+
         if tanode is not None:
             ta_type = tanode.datatype
-        return ta_type.T[0]
+        return ta_type.T[0] if ta_type else None
 
     def visit_TensorArrayScatterV3(self, node):
         # input is resource, indices, values , flow

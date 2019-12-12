@@ -46,11 +46,10 @@ def ssa_convert(ssa,
                 predicted_feature_name=None,
                 predicted_probabilities_output='',
                 add_custom_layers=False,
-                custom_conversion_functions={},
-                custom_shape_functions={}, 
-                optional_inputs = []
+                custom_conversion_functions=None,
+                custom_shape_functions=None,
+                optional_inputs=None
                 ):
-
     """
     Convert NNSSA into Core ML spec.
     ssa : NetworkEnsemble
@@ -90,6 +89,13 @@ def ssa_convert(ssa,
         Specify custom function to compute `output` shape given `input` shape for given custom operator
         This is required for new converter path, which maintains and propagates shapes while converting operators.
     """
+    if not custom_conversion_functions:
+        custom_conversion_functions = dict()
+    if not custom_shape_functions:
+        custom_shape_functions = dict()
+    if not optional_inputs:
+        optional_inputs = list()
+
     if outputs is not None:
         ssa.extract_subgraph(outputs, name=top_func)
 
@@ -138,14 +144,14 @@ def ssa_convert(ssa,
                              add_custom_layers=add_custom_layers,
                              custom_conversion_functions=custom_conversion_functions,
                              custom_shape_functions=custom_shape_functions,
-                             optional_inputs = optional_inputs)
+                             optional_inputs=optional_inputs)
 
     converter.convert()
 
     builder = converter._get_builder(func=top_func)
     # Add image input identifier
     if image_input_names is not None and isinstance(
-        image_input_names, _string_types):
+            image_input_names, _string_types):
         image_input_names = [image_input_names]
 
     # Add classifier classes (if applicable)
@@ -155,16 +161,16 @@ def ssa_convert(ssa,
             import os
             if not os.path.isfile(classes_in):
                 raise ValueError("Path to class labels (%s) does not exist." % \
-                    classes_in)
+                                 classes_in)
             if os.path.isfile(classes_in):
                 with open(classes_in, 'r') as f:
                     classes = f.read()
                 classes = classes.splitlines()
-            elif type(classes_in) is list: # list[int or str]
+            elif type(classes_in) is list:  # list[int or str]
                 classes = classes_in
             else:
-                raise ValueError('Class labels must be a list of integers / strings,'\
-                    ' or a file path')
+                raise ValueError('Class labels must be a list of integers / strings,' \
+                                 ' or a file path')
 
             if predicted_feature_name is not None:
                 builder.set_class_labels(
@@ -186,7 +192,6 @@ def ssa_convert(ssa,
 
     mlmodel_spec = converter.get_spec()
 
-
     # Required if an output node produces multiple outputs
     # Generate new output features
     modified_output_features_list = []
@@ -202,7 +207,6 @@ def ssa_convert(ssa,
         else:
             modified_output_features_list.append(output_feature)
 
-
     # delete the existing output feature
     mlmodel_spec.description.ClearField('output')
 
@@ -210,11 +214,10 @@ def ssa_convert(ssa,
     mlmodel_spec.description.output.extend(modified_output_features_list)
 
     # MLModel passes
-    mlmodel_passes = [remove_disconnected_constants]
+    mlmodel_passes = [remove_disconnected_layers]
     for p in mlmodel_passes:
         p(mlmodel_spec)
 
-    
     if DEBUG:
         coremltools.models.utils.save_spec(mlmodel_spec, '/tmp/model_from_spec.mlmodel')
 
@@ -223,15 +226,15 @@ def ssa_convert(ssa,
 
 class SSAConverter(object):
     def __init__(self,
-                 net_ensemble, # type: NetworkEnsemble
-                 top_func='main', # type: str
-                 inputs=None, # type: Dict[str, tuple]
-                 outputs=None, # type: List[str]
-                 neural_network_type=None, # type: str
+                 net_ensemble,  # type: NetworkEnsemble
+                 top_func='main',  # type: str
+                 inputs=None,  # type: Dict[str, tuple]
+                 outputs=None,  # type: List[str]
+                 neural_network_type=None,  # type: str
                  add_custom_layers=False,  # type: bool
                  custom_conversion_functions={},  # type: Dict[Text, Any]
-                 custom_shape_functions={}, # type: Dict[Text, Any]
-                 optional_inputs = [] # type: List[str]
+                 custom_shape_functions={},  # type: Dict[Text, Any]
+                 optional_inputs=[]  # type: List[str]
                  ):
         self.net_ensemble = net_ensemble
         self.top_func = top_func  # string indicating the top level function
@@ -330,124 +333,126 @@ class SSAConverter(object):
                 self.spec.description.input[idx].type.isOptional = True
 
         self.CONVERT_FUNCTION_MAP = {
-            'Placeholder': self._convert_input,
-            'Const': self._convert_const,
-            'Transpose': self._convert_transpose,
-            'Shape': self._convert_shape,
-            'Size': self._convert_size,
-            'Slice': self._convert_slice,
-            'StridedSlice': self._convert_slice,
-            'Range': self._convert_range,
-            'TensorArrayV3': self._convert_tensorarray_alloc,
-            'TensorArrayScatterV3': self._convert_array_scatter,
-            'TensorArraySizeV3': self._convert_tensorarray_size,
-            'TensorArrayGatherV3': self._convert_tensorarray_gather,
-            'TensorArrayReadV3': self._convert_tensorarray_read,
-            'TensorArrayWriteV3': self._convert_tensorarray_write,
-            'while': self._convert_while,
-            'function_entry': self._convert_function,
-            'get_tuple': self._convert_get_tuple,
-            'make_tuple': self._convert_make_tuple,
-            'get_global': self._convert_get_global,
-            'set_global': self._convert_set_global,
-            'Greater': self._convert_binary_broadcastable,
-            'GreaterEqual': self._convert_binary_broadcastable,
-            'NotEqual': self._convert_binary_broadcastable,
-            'Equal': self._convert_binary_broadcastable,
-            'Less': self._convert_binary_broadcastable,
-            'LessEqual': self._convert_binary_broadcastable,
-            'LogicalAnd': self._convert_binary_broadcastable,
-            'LogicalOr': self._convert_binary_broadcastable,
-            'LogicalNot': self._convert_unary_logical_not,
-            'LogSoftmax': self._convert_unary_log_softmax,
-            'return': self._convert_return,
-            'Maximum': self._convert_binary_broadcastable,
-            'Minimum': self._convert_binary_broadcastable,
-            'Add': self._convert_binary_broadcastable,
-            'Sub': self._convert_binary_broadcastable,
-            'Mul': self._convert_binary_broadcastable,
-            'RealDiv': self._convert_binary_broadcastable,
-            'FloorDiv': self._convert_binary_broadcastable,
-            'BiasAdd': self._convert_binary_broadcastable,
-            'Pow': self._convert_binary_broadcastable,
-            'FloorMod': self._convert_floor_mod,
-            'SquaredDifference': self._convert_squared_difference,
-            'Concat': self._convert_concat_nd,
-            'ConcatV2': self._convert_concat_nd,
-            'MatMul': self._convert_batched_mat_mul,
-            'BatchMatMul': self._convert_batched_mat_mul,
-            'Embedding': self._convert_embedding,
-            'Split': self._convert_split,
-            'SplitV': self._convert_split,
-            'Sigmoid': self._convert_unary_activation,
-            'Relu': self._convert_unary_activation,
-            'Relu6': self._convert_unary_activation_relu6,
-            'LeakyRelu': self._convert_unary_activation,
-            'Tanh': self._convert_unary_activation,
-            'Elu': self._convert_unary_activation,
-            'Identity': self._convert_identity,
-            'Cast': self._convert_cast,
-            'Pack': self._convert_pack,
-            'Unpack': self._convert_unpack,
-            'Gather': self._convert_gather,
-            'GatherNd': self._convert_gather_nd,
-            'ScatterNd': self._convert_scatter_nd,
-            'Square': self._convert_unary_square,
-            'Neg': self._convert_unary_neg,
-            'Reciprocal': self._convert_unary_inverse,
-            'Sqrt': self._convert_unary_common,
-            'Rsqrt': self._convert_unary_common,
-            'Exp': self._convert_unary_common,
-            'Log': self._convert_unary_common,
             'Abs': self._convert_unary_common,
-            'Sign': self._convert_unary_common,
-            'Ceil': self._convert_unary_common,
-            'Floor': self._convert_unary_common,
-            'Round': self._convert_unary_common,
-            'Sin': self._convert_unary_trigonometric,
-            'Cos': self._convert_unary_trigonometric,
-            'Tan': self._convert_unary_trigonometric,
-            'GeLU': self._convert_gelu,
-            'SelectMask': self._convert_select,
-            'Where': self._convert_where,
-            'Conv2D': self._convert_conv2d,
-            'Conv2DBackpropInput': self._convert_conv2d_transpose,
-            'DepthwiseConv2dNative': self._convert_conv2d,
-            'MaxPool': self._convert_maxpool,
-            'AvgPool': self._convert_avgpool,
-            'Reshape': self._convert_reshape,
-            'Softmax': self._convert_softmax,
-            'Prod': self._convert_reduction,
-            'Mean': self._convert_reduction,
-            'Sum': self._convert_reduction,
-            'Max': self._convert_reduction,
-            'Min': self._convert_reduction,
+            'Add': self._convert_binary_broadcastable,
+            'AddV2': self._convert_binary_broadcastable,
             'All': self._convert_reduction,
             'Any': self._convert_reduction,
             'ArgMax': self._convert_argmax,
             'ArgMin': self._convert_argmin,
-            'ReverseV2': self._convert_reverse,
-            'ReverseSequence': self._convert_reverse_sequence,
+            'AvgPool': self._convert_avgpool,
+            'BatchMatMul': self._convert_batched_mat_mul,
+            'BatchNorm': self._convert_batchnorm,
+            'BatchToSpaceND': self._convert_batch_to_space_nd,
+            'BiasAdd': self._convert_binary_broadcastable,
+            'Cast': self._convert_cast,
+            'Ceil': self._convert_unary_common,
+            'ClipByValue': self._convert_clip,
+            'Concat': self._convert_concat_nd,
+            'ConcatV2': self._convert_concat_nd,
+            'Const': self._convert_const,
+            'Conv2D': self._convert_conv2d,
+            'Conv2DBackpropInput': self._convert_conv2d_transpose,
+            'Cos': self._convert_unary_trigonometric,
+            'DepthToSpace': self._convert_reorganize_data,
+            'DepthwiseConv2dNative': self._convert_conv2d,
+            'Elu': self._convert_unary_activation,
+            'Embedding': self._convert_embedding,
+            'Equal': self._convert_binary_broadcastable,
+            'Exp': self._convert_unary_common,
             'ExpandDims': self._convert_expand_dims,
-            'Squeeze': self._convert_squeeze,
-            'Tile': self._convert_tile,
             'Fill': self._convert_fill,
+            'Floor': self._convert_unary_common,
+            'FloorDiv': self._convert_binary_broadcastable,
+            'FloorMod': self._convert_floor_mod,
+            'Gather': self._convert_gather,
+            'GatherNd': self._convert_gather_nd,
+            'GeLU': self._convert_gelu,
+            'Greater': self._convert_binary_broadcastable,
+            'GreaterEqual': self._convert_binary_broadcastable,
+            'Identity': self._convert_identity,
+            'LRN': self._convert_lrn,
             'LSTMBlock': self._convert_lstm_block_cell,
+            'LayerNormalization': self._convert_layer_normalization,
+            'LeakyRelu': self._convert_unary_activation,
+            'Less': self._convert_binary_broadcastable,
+            'LessEqual': self._convert_binary_broadcastable,
+            'Log': self._convert_unary_common,
+            'LogSoftmax': self._convert_unary_log_softmax,
+            'LogicalAnd': self._convert_binary_broadcastable,
+            'LogicalNot': self._convert_unary_logical_not,
+            'LogicalOr': self._convert_binary_broadcastable,
+            'MatMul': self._convert_batched_mat_mul,
+            'Max': self._convert_reduction,
+            'MaxPool': self._convert_maxpool,
+            'Maximum': self._convert_binary_broadcastable,
+            'Mean': self._convert_reduction,
+            'Min': self._convert_reduction,
+            'Minimum': self._convert_binary_broadcastable,
+            'MirrorPad': self._convert_mirror_pad,
+            'Mul': self._convert_binary_broadcastable,
+            'Neg': self._convert_unary_neg,
+            'NotEqual': self._convert_binary_broadcastable,
+            'Pack': self._convert_pack,
             'Pad': self._convert_constant_pad,
             'PadV2': self._convert_constant_pad,
-            'MirrorPad': self._convert_mirror_pad,
-            'TopKV2': self._convert_topk,
-            'iff': self._convert_iff,
+            'Placeholder': self._convert_input,
+            'Pow': self._convert_binary_broadcastable,
+            'Prod': self._convert_reduction,
+            'Range': self._convert_range,
+            'RealDiv': self._convert_binary_broadcastable,
+            'Reciprocal': self._convert_unary_inverse,
+            'Relu': self._convert_unary_activation,
+            'Relu6': self._convert_unary_activation_relu6,
+            'Reshape': self._convert_reshape,
             'ResizeBilinear': self._convert_resize_bilinear,
             'ResizeNearestNeighbor': self._convert_resize_nearest_neighbor,
-            'LayerNormalization': self._convert_layer_normalization,
-            'SpaceToDepth': self._convert_reorganize_data,
-            'DepthToSpace': self._convert_reorganize_data,
+            'ReverseSequence': self._convert_reverse_sequence,
+            'ReverseV2': self._convert_reverse,
+            'Round': self._convert_unary_common,
+            'Rsqrt': self._convert_unary_common,
+            'ScatterNd': self._convert_scatter_nd,
+            'SelectMask': self._convert_select,
+            'Shape': self._convert_shape,
+            'Sigmoid': self._convert_unary_activation,
+            'Sign': self._convert_unary_common,
+            'Sin': self._convert_unary_trigonometric,
+            'Size': self._convert_size,
+            'Slice': self._convert_slice,
+            'Softmax': self._convert_softmax,
             'SpaceToBatchND': self._convert_space_to_batch_nd,
-            'BatchToSpaceND': self._convert_batch_to_space_nd,
-            'BatchNorm': self._convert_batchnorm,
-            'LRN': self._convert_lrn,
-            'ClipByValue': self._convert_clip,
+            'SpaceToDepth': self._convert_reorganize_data,
+            'Split': self._convert_split,
+            'SplitV': self._convert_split,
+            'Sqrt': self._convert_unary_common,
+            'Square': self._convert_unary_square,
+            'SquaredDifference': self._convert_squared_difference,
+            'Squeeze': self._convert_squeeze,
+            'StridedSlice': self._convert_slice,
+            'Sub': self._convert_binary_broadcastable,
+            'Sum': self._convert_reduction,
+            'Tan': self._convert_unary_trigonometric,
+            'Tanh': self._convert_unary_activation,
+            'TensorArrayGatherV3': self._convert_tensorarray_gather,
+            'TensorArrayReadV3': self._convert_tensorarray_read,
+            'TensorArrayScatterV3': self._convert_array_scatter,
+            'TensorArraySizeV3': self._convert_tensorarray_size,
+            'TensorArrayV3': self._convert_tensorarray_alloc,
+            'TensorArrayWriteV3': self._convert_tensorarray_write,
+            'Tile': self._convert_tile,
+            'TopKV2': self._convert_topk,
+            'Transpose': self._convert_transpose,
+            'Unpack': self._convert_unpack,
+            'Where': self._convert_where,
+            'function_entry': self._convert_function,
+            'get_global': self._convert_get_global,
+            'get_tuple': self._convert_get_tuple,
+            'iff': self._convert_iff,
+            'make_tuple': self._convert_make_tuple,
+            'return': self._convert_return,
+            'set_global': self._convert_set_global,
+            'while': self._convert_while,
+            'ZerosLike': self._convert_zeros_like
         }
 
         # converter state variables
@@ -523,7 +528,7 @@ class SSAConverter(object):
         for name, var in self.net_ensemble.variables.items():
             layer = builder.add_copy(
                 name=name + '_copy',
-                input_name=name+'__invar__',
+                input_name=name + '__invar__',
                 output_name=name)
             shapes.propagate_single_layer(layer, self.tensor_shapes)
 
@@ -552,9 +557,9 @@ class SSAConverter(object):
                 raise NotImplementedError(
                     '[SSAConverter] Conversion for op %s not implemented, terminating...' % op_type)
 
-            print('[SSAConverter] [{}/{}] Converting op type \'{}\', of name \'{}\' {}'.format(
+            print('[SSAConverter] [{}/{}] Converting op type: \'{}\', name: \'{}\'{}{}'.format(
                 idx + 1, len(instruction_order), op_type, node_name, conversion_message,
-                (('(output shape: ' + str(node.datatype.get_shape()) + ')') if builtins.is_tensor(node.datatype) else '')))
+                ((', output_shape: ' + str(node.datatype.get_shape()) + '.') if builtins.is_tensor(node.datatype) else '.')))
 
             # If custom conversion method is provided, use it
             # Otherwise, invoke internal conversion method
@@ -569,9 +574,8 @@ class SSAConverter(object):
             layer = builder.add_copy(
                 name=name + '_copy_r',
                 input_name=name,
-                output_name=name+'__outvar__')
+                output_name=name + '__outvar__')
             shapes.propagate_single_layer(layer, self.tensor_shapes)
-
 
     def _get_builder(self, func=None):
         if func is None:
@@ -594,7 +598,7 @@ class SSAConverter(object):
 
     def _get_input_tensors(self, node, inspect_shapes=True):
         """ Get the input nodes, their names and types for a node.
-        There are two cases:
+        There are three cases:
         (1) (Tuple case) input is a tuple. In this case, expand that tuple input into a list of input tensors
         (2) (Regular case) input is a node name. In this case just copy it.
         (3) (Indexed tuple case) input is one element in a tuple. In this case it should be stored in op_tensor_map
@@ -643,7 +647,7 @@ class SSAConverter(object):
 
     def __compare_propagated_and_inferred_shape(self, name, type_):
 
-        propagated_shape = self.tensor_shapes[name]
+        propagated_shape = tuple(self.tensor_shapes[name])
         if _is_scalar(type_):
             inferred_shape = (1,)
         elif builtins.is_tensor(type_):
@@ -654,11 +658,10 @@ class SSAConverter(object):
                 assert ashape.get_shape() == element_shape
             inferred_shape = [-1] + list(element_shape)
         else:
-            raise ValueError('[SSAConverter] Failed to infer shape'
-                             ' for tensor %s' % name)
+            raise ValueError('[SSAConverter] Failed to infer shape for tensor %s' % name)
 
-        mismatch = '[SSAConverter] Shape mismatch between inferred {} and propagated {} for tensor {}'.format(
-            inferred_shape, propagated_shape, name)
+        mismatch = '[SSAConverter] Shape mismatch for {}: inferred {} vs. propagated {}.'.format(
+            name, inferred_shape, propagated_shape)
 
         if len(propagated_shape) != len(inferred_shape):
             raise ValueError(mismatch)
@@ -676,9 +679,12 @@ class SSAConverter(object):
     def _convert_const(self, node):
         """ Convert a constant node.
         """
-        val = np.array(node.value.val)
+        node_value = node.value
+        if node_value is None:
+            node_value = node.attr.get('value')
+        val = np.array(node_value.val)
         if len(val.shape) == 0:
-            val = np.array([node.value.val])
+            val = np.array([node_value.val])
         builder = self._get_builder()
         layer = builder.add_load_constant_nd(
             name=node.name, output_name=node.name, constant_value=val, shape=val.shape)
@@ -805,14 +811,14 @@ class SSAConverter(object):
 
         if has_squeeze:
             input_shape = self._get_tensor_shape_from_type(input_types[0])
-            input_rank  = len(input_shape)
+            input_rank = len(input_shape)
             squeeze_all = (input_rank == len(axes))
             layer = builder.add_squeeze(
                 name=node.name,
                 input_name=slice_output_name,
                 output_name=node.name,
-                axes= axes if not squeeze_all else None,
-                squeeze_all = squeeze_all)
+                axes=axes if not squeeze_all else None,
+                squeeze_all=squeeze_all)
             shapes.propagate_single_layer(layer, self.tensor_shapes)
 
     def _convert_range(self, node):
@@ -1516,7 +1522,7 @@ class SSAConverter(object):
         if node.op == 'DepthwiseConv2dNative':
             depth_multiplier = weight.shape[3]
             weight = np.reshape(weight,
-                (kernel_height, kernel_width, 1, kernel_channels * depth_multiplier))
+                                (kernel_height, kernel_width, 1, kernel_channels * depth_multiplier))
             output_channels = kernel_channels * depth_multiplier
             groups = kernel_channels
             kernel_channels = 1
@@ -1976,13 +1982,13 @@ class SSAConverter(object):
         if 'gamma' not in node.attr or 'beta' not in node.attr:
             raise ValueError('BatchNorm node must have attributes \'gamma\' and \'beta\'')
         gamma = node.attr.get('gamma')
-        C = len(gamma)
+        num_channels = len(gamma)
         beta = node.attr.get('beta')
-        mean = node.attr.get('mean', np.zeros((C,)))
-        variance = node.attr.get('variance', np.ones((C,)))
+        mean = node.attr.get('mean', np.zeros((num_channels,)))
+        variance = node.attr.get('variance', np.ones((num_channels,)))
         layer = self._get_builder().add_batchnorm(
             name=node.name,
-            channels=C,
+            channels=num_channels,
             gamma=gamma,
             beta=beta,
             mean=mean,
@@ -2227,6 +2233,152 @@ class SSAConverter(object):
         self.tensor_shapes[node.name] = self._get_tensor_shape_from_type(
             node.datatype)
 
+    def _convert_binary(self, node):
+        """
+        Convert binary operator
+            - Attempts to add elementwise operator if possible
+            - Otherwise, inserts broadcastable operator
+        """
+        def _is_elementwise_scalar_check(input_type):
+            """
+            Checks if element is scalar
+                - A scalar
+                - 0-D tensor
+                - 1-D tensor with only one element
+            """
+            if _is_scalar(input_type):
+                return True
+            shape = input_type.get_shape()
+            if builtins.is_tensor(input_type) and len(shape) == 1 and shape[0] == 1:
+                return True
+            return False
+
+        # CoreML elementwise operator has limited brodcastable support
+        # Check if first shape can be broadcasted to second shape
+        def _is_broadcastable_shape(shape_0, shape_1):
+            assert (len(shape_0) > 0 and len(shape_1) > 0)
+            if shape_0[0] != 1 and shape_0[0] != shape_1[0]:
+                return False
+
+            if shape_0[1:] == [1] * (len(shape_0)-1):
+                return True
+            return False
+
+        def _convert_binary_elementwise(node):
+            """
+            Adds binary elementwise operator
+                - Returns True if successful
+                - Otherwise returns False
+            """
+            assert len(node.inputs) == 2
+            input_nodes, input_names, input_types = self._get_input_tensors(node)
+            builder = self._get_builder()
+            elementwise_support = {'add', 'addv2', 'sub', 'mul', 'realdiv'}
+            op = node.op.lower()
+
+            if op not in elementwise_support:
+                return False
+
+            # If any of the input is dynamic, cannot add Elementwise operator
+            for _input in input_types:
+                if -1 in self._get_tensor_shape_from_type(_input):
+                    return False
+
+            alpha = None
+            inputs = []
+            if input_nodes[1].op == 'Const' and _is_elementwise_scalar_check(input_types[1]):
+                # Note alpha is second input is scalar
+                alpha = input_nodes[1].value.val
+                inputs = [input_names[0]]
+            elif input_nodes[0].op == 'Const' and _is_elementwise_scalar_check(input_types[0]):
+                # Note alpha is first input is scalar
+                alpha = input_nodes[0].value.val
+                inputs = [input_names[1]]
+            else:
+                # If both inputs are not scalar, ensure shape is same
+                # If any of the input is not tensor, add broadcastable layer instead
+                if not (builtins.is_tensor(input_types[0]) and builtins.is_tensor(input_types[1])):
+                    return False
+
+                shape_0 = list(input_types[0].get_shape())
+                shape_1 = list(input_types[1].get_shape())
+
+                # Make sure, any of the input is not rank-0
+                if len(shape_0) == 0 or len(shape_1) == 0:
+                    return False
+
+                if _is_broadcastable_shape(shape_0, shape_1) or _is_broadcastable_shape(shape_1, shape_0):
+                    pass
+
+                # NOTE: Special case, one of the input has multiple 1 dims and same shape
+                # e.g. (1, 4, 5) and (4, 5): in this case, we can expand second
+                # input to make equivalent to (1, 4, 5)
+                elif abs(len(shape_0) - len(shape_1)) > 0:
+                    small_index = 1 if len(shape_0) > len(shape_1) else 0
+
+                    # Switch shape and make first shape smaller to infer axis information
+                    if small_index == 1:
+                        shape_0, shape_1 = shape_1, shape_0
+
+                    same_shape_index = len(shape_1) - len(shape_0)
+                    shape_temp = [1] * same_shape_index + shape_0
+                    if shape_temp != shape_1:
+                        return False
+
+                    # Extend one of the input to allow use of elementwise operator
+                    layer = builder.add_expand_dims(name=node.name+'_'+input_names[small_index]+'_'+'_expand_dims',
+                                                    input_name=input_names[small_index],
+                                                    output_name=input_names[small_index]+'_expanded',
+                                                    axes=list(range(same_shape_index)))
+                    shapes.propagate_single_layer(layer, self.tensor_shapes)
+                    input_names[small_index] += '_expanded'
+
+                elif shape_0 != shape_1:
+                    return False
+                inputs = input_names
+
+            # Div operation cannot be simulated with more than one input and
+            # without Alpha
+            if op == 'realdiv' and alpha is None:
+                return False
+
+            if op == 'realdiv':
+                # Inverse Alpha to simulate DIV using MUL operator
+                if alpha is None:
+                    raise ValueError("Incorrect configuration!! Alpha not provided for Elementwise Div operator")
+                alpha = 1 / float(alpha)
+            elif op == 'sub':
+                if alpha and inputs[0] == input_names[0]:
+                    alpha = -alpha
+                else:
+                    neg_index = 1
+                    if alpha:
+                        neg_index = 0
+                    layer = builder.add_elementwise(name=node.name+'_'+inputs[neg_index]+'_neg',
+                                                    input_names=[inputs[neg_index]],
+                                                    output_name=inputs[neg_index]+'_neg',
+                                                    mode='MULTIPLY',
+                                                    alpha=-1.0)
+                    inputs[neg_index] += '_neg'
+                    shapes.propagate_single_layer(layer, self.tensor_shapes)
+
+            # map certain ops to different but equivalent ops
+            mapping_op = {'ADDV2':'ADD', 'SUB':'ADD', 'REALDIV':'MULTIPLY', 'MUL':'MULTIPLY'}
+            op = op.upper()
+            op = mapping_op.get(op, op)
+            layer = builder.add_elementwise(name=node.name,
+                                            input_names=inputs,
+                                            output_name=node.name,
+                                            mode=op,
+                                            alpha=alpha)
+            shapes.propagate_single_layer(layer, self.tensor_shapes)
+            return True
+
+        # Try to add Elementwise operator if possible,
+        # If configuration not supported, insert broadcastable operator instead
+        if not _convert_binary_elementwise(node):
+            self._convert_binary_broadcastable(node)
+
     def _convert_binary_broadcastable(self, node):
         assert len(node.inputs) == 2
         input_nodes, input_names, input_types = self._get_input_tensors(node)
@@ -2238,8 +2390,7 @@ class SSAConverter(object):
         logical_ops = {'logicaland': 'AND', 'logicalor': 'OR'}
         math_ops = {'sub': 'subtract', 'mul': 'multiply', 'realdiv': 'divide',
                     'floordiv': 'floor_div', 'maximum': 'max', 'minimum': 'min',
-                    'biasadd': 'add',
-                    'pow': 'pow'}
+                    'biasadd': 'add', 'pow': 'pow', 'addv2': 'add'}
         if op in compare_greater_ops:
             layer = builder.add_greater_than(
                 name=node.name,
@@ -2509,10 +2660,30 @@ class SSAConverter(object):
         min_value = input_nodes[1].value.val
         max_value = input_nodes[2].value.val
 
-        layer = self._get_builder().add_clip(name = node.name,
+        layer = self._get_builder().add_clip(name=node.name,
                                              input_name=input_names[0],
                                              output_name=node.name,
                                              min_value=min_value,
                                              max_value=max_value)
 
         self.tensor_shapes[node.name] = self._get_tensor_shape_from_type(node.datatype)
+
+    def _convert_zeros_like(self, node):
+        """ Convert a ZerosLike node.
+        """
+        input_nodes, input_names, input_types = self._get_input_tensors(node)
+
+        shape = input_types[0].get_shape()
+        builder = self._get_builder()
+        if -1 not in shape:
+            # We can use fill static or load constant as shape is known
+            val = np.zeros(shape)
+            if len(shape) == 0:
+                val = np.array([0])
+            layer = builder.add_load_constant_nd(
+                name=node.name, output_name=node.name, constant_value=val, shape=val.shape)
+        else:
+            # Insert dynamic zeros like
+            layer = builder.add_fill_like(
+                name=node.name, input_name=input_names[0], output_name=node.name, value=0.0)
+        shapes.propagate_single_layer(layer, self.tensor_shapes)
