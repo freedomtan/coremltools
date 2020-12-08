@@ -57,7 +57,8 @@ class TFLoader:
 
         logging.info("Loading TensorFlow model '{}'".format(self.model))
         outputs = self.kwargs.get("outputs", None)
-        self._graph_def = self._graph_def_from_model(outputs)
+        tags = self.kwargs.get("tags", None)
+        self._graph_def = self._graph_def_from_model(outputs, tags)
 
         if self._graph_def is not None and len(self._graph_def.node) == 0:
             msg = "tf.Graph should have at least 1 node, Got empty graph."
@@ -83,7 +84,7 @@ class TFLoader:
         return program
 
     # @abstractmethod
-    def _graph_def_from_model(self, outputs=None):
+    def _graph_def_from_model(self, outputs=None, tags=None):
         """Load TensorFlow model into GraphDef. Overwrite for different TF versions."""
         pass
 
@@ -134,7 +135,7 @@ class TF1Loader(TFLoader):
         """
         TFLoader.__init__(self, model, debug, **kwargs)
 
-    def _graph_def_from_model(self, outputs=None):
+    def _graph_def_from_model(self, outputs=None, tags=None):
         """Overwrites TFLoader._graph_def_from_model()"""
         msg = "Expected model format: [tf.Graph | .pb | SavedModel | tf.keras.Model | .h5], got {}"
         if isinstance(self.model, tf.Graph) and hasattr(self.model, "as_graph_def"):
@@ -165,7 +166,7 @@ class TF1Loader(TFLoader):
                 graph_def = self._from_tf_keras_model(self.model)
                 return self.extract_sub_graph(graph_def, outputs)
             elif os.path.isdir(str(self.model)):
-                graph_def = self._from_saved_model(self.model)
+                graph_def = self._from_saved_model(self.model, tags=tags)
                 return self.extract_sub_graph(graph_def, outputs)
             else:
                 raise NotImplementedError(msg.format(self.model))

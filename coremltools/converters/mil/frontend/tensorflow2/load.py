@@ -72,7 +72,7 @@ class TF2Loader(TFLoader):
         """
         TFLoader.__init__(self, model, debug, **kwargs)
 
-    def _graph_def_from_model(self, outputs=None):
+    def _graph_def_from_model(self, outputs=None, tags=None):
         """Overwrites TFLoader._graph_def_from_model()"""
         msg = (
             "Expected model format: [SavedModel | [concrete_function] | "
@@ -96,7 +96,7 @@ class TF2Loader(TFLoader):
                 elif _os_path.isfile(self.model) and self.model.endswith(".h5"):
                     cfs = self._concrete_fn_from_tf_keras_or_h5(self.model)
                 elif _os_path.isdir(self.model):
-                    saved_model = _tf.saved_model.load(self.model)
+                    saved_model = _tf.saved_model.load(self.model, tags=tags)
                     sv = saved_model.signatures.values()
                     cfs = sv if isinstance(sv, list) else list(sv)
                 else:
