@@ -120,6 +120,9 @@ def convert(
           for debugging purpose and currently cannot be compiled to
           executable.
 
+    Note that for TensorFlow SaveModel models with more than 1 tag set,
+    ``tags: list[str]``, can be used to specify a set of tags.
+
     Returns
     -------
     model: `coremltools.models.MLModel` or `coremltools.converters.mil.Program`
